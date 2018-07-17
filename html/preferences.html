@@ -1,0 +1,337 @@
+{% extends 'logged_in/base.html' %}
+{% load static %}
+{% load tags %}
+{% load bootstrap3 %}
+
+{% block content %}
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/dt-1.10.16/af-2.2.2/b-1.4.2/r-2.2.0/sc-1.4.3/sl-1.2.3/datatables.min.css"/>
+    <script type="text/javascript" src="https://cdn.datatables.net/v/dt/dt-1.10.16/af-2.2.2/b-1.4.2/r-2.2.0/sc-1.4.3/sl-1.2.3/datatables.min.js"></script>
+    <script src="https://js.stripe.com/v3/"></script>
+
+    {{ form.media }}
+
+    <title>Preferences Page</title>
+    <div id="page-wrapper">
+        <div class="row">
+            <div class="col-lg-12">
+                <h1 class="page-header">Preferences</h1>
+            </div>
+        </div>
+        <div class="panel panel-default">
+            <div class="panel-heading">
+                <h2 style="text-align: center">{{name}}</h2>
+            </div>
+        </div>
+        <div class="panel panel-default">
+            <div class="panel-heading">Personal Information</div>
+            <div class="panel-body">
+                <div class="col-sm-6">
+                    <h4 style="text-align: center">Email Address</h4>
+                    <p style="text-align: center">{{ email }}
+                    </p>
+                </div>
+                <div class="col-sm-6">
+                    <h4 style="text-align: center">Company Code</h4>
+                    <p style="text-align: center">{{code}}</p>
+                </div>
+            </div>
+        </div>
+        <div id="sub-messages"></div>
+        <div class="panel panel-default">
+            <div class="panel-heading">Subscription Information</div>
+            <div class="panel-body">
+                <table class="table table-striped" id="sub-table">
+                    <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Payment method</th>
+                        <th>Sensor Count</th>
+                        <th>Cost per Sensor</th>
+                        <th>Next Bill Date</th>
+                        <th>Total Cost/Month</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for sub in subscriptions %}
+                        <tr class="{% cycle "even" "odd" %}">
+                            <td>{{ sub.plan.name }}</td>
+                            <td>
+                                {{ sub.payment_method.card_type }} ending in
+                                {{ sub.payment_method.last_four_digits }}
+                            </td>
+                            <td>{{ sub.sensor_count }}</td>
+                            <td>{{ sub.plan.charge_amount|to_dollars }}</td>
+                            <td>{{ sub.charge_date|add_one_month_to_now }}</td>
+                            <td>{{ sub.plan.charge_amount|multiply:sub.sensor_count|to_dollars }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <div style="margin-top: 20px">
+                    <form action="{% url 'payment_update' %}" method="POST">
+                        {% csrf_token %}
+                        <script
+                                src="https://checkout.stripe.com/checkout.js" class="stripe-button"
+                                data-key="{{ stripe_pk }}"
+                                data-image="{% static 'images/trashr.ico' %}"
+                                data-name="TRASHR LLC"
+                                data-panel-label="Update Card Details"
+                                data-label="Update Card Details"
+                                data-allow-remember-me=false
+                                data-locale="auto"
+                                data-zip-code="true"
+                                data-email="{{ email }}">
+                        </script>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div id="email-messages"></div>
+        <div class="panel panel-default">
+            <div class="panel-heading">Email Notifications</div>
+            <div class="panel-body">
+                <div class="row col-md-12">
+                    <p>Send emails to:</p>
+                    <table id="email-table" class="table table-striped">
+                        {% if emails %}
+                            {% for email in emails %}
+                                <tr>
+                                    <td>{{ email }}</td>
+                                    <td><button data-delete="{{ email }}" class="email-delete btn btn-danger" value="remove">remove</button></td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr id="empty"><td>None</td></tr>
+                        {% endif %}
+                    </table>
+                </div>
+                <div class="row">
+                    <div  style="padding-bottom: 30px" class="col-md-6">
+                        {{ form.email_add }}
+                        <button id="add-email" class="btn btn-primary" type="submit">Add email</button>
+                    </div>
+                    <div class="col-md-6">
+                        {{ form_verify.email }}
+                        <button id="verify-email" class="btn btn-primary">Verify New Email</button>
+                    </div>
+                </div>
+
+
+                <p>Alerts Past 30 Days</p>
+                <table id="alert-table" class="table table-striped">
+                    <thead>
+                    <tr>
+                        <td>Alert Time</td>
+                        <td>Address</td>
+                        <td>Fill % At Alert Time</td>
+                        <td>Current Fill %</td>
+                    </tr>
+                    </thead>
+                    {% for alert in alerts %}
+                        <tr>
+                            <td>{{ alert.timestamp }}</td>
+                            <td>{{ alert.address }}</td>
+                            <td>{% with fill=alert.fill_percent %}
+                                {% if not fill %}<p style="color:green">0%</p>
+                                {% elif fill < 30 %}
+                                    <p style="color:green">{{fill}}%</p>
+                                {% elif fill > 50 %}
+                                    <p style="color:red">{{fill}}%</p>
+                                {% else %}
+                                    <p style="color:#FFA500">{{fill}}%</p>
+                                {% endif %}
+                            {% endwith %}</td>
+                            <td>{% with fill=alert.current_fill %}
+                                {% if not fill %}<p style="color:green">0%</p>
+                                {% elif fill < 30 %}
+                                    <p style="color:green">{{fill}}%</p>
+                                {% elif fill > 50 %}
+                                    <p style="color:red">{{fill}}%</p>
+                                {% else %}
+                                    <p style="color:#FFA500">{{fill}}%</p>
+                                {% endif %}
+                            {% endwith %}</td>
+                        </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div class="panel panel-default">
+            <div class="panel-heading">Transaction History</div>
+            <div class="panel-body">
+                <table id="trans-table" class="table table-striped">
+                    <thead>
+                    <tr>
+                        <td>
+                            Created Date
+                        </td>
+                        <td>
+                            Fulfilled Date
+                        </td>
+                        <td>
+                            Status
+                        </td>
+                        <td>
+                            Amount
+                        </td>
+                        <td>
+                            Subscription
+                        </td>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for sub in subscriptions %}
+                        {% for trans in sub.transactions.all %}
+                            <tr>
+                                <td>
+                                    {{ trans.created_datetime }}
+                                </td>
+                                <td>
+                                    {{ trans.filled_datetime }}
+                                </td>
+                                <td>
+                                    {{ trans.status }}
+                                </td>
+                                <td>
+                                    {{ trans.amount|to_dollars }}
+                                </td>
+                                <td>
+                                    {{ trans.subscription.plan.name }}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        $(document).ready(function () {
+            bootstrap_alert = function() {};
+            bootstrap_alert.warning = function(message, div) {
+                $('#' + div).html('<div class="alert alert-danger alert-dismissable">\
+                       <button type="button" class="close" data-dismiss="alert" aria-hidden="true">\
+                       &times;</button><span style="font-size:18px">'+message+'</span></div>');
+            };
+            bootstrap_alert.success = function(message, div) {
+                $('#' + div).html('<div class="alert alert-success alert-dismissable">\
+                       <button type="button" class="close" data-dismiss="alert" aria-hidden="true">\
+                       &times;</button><span style="font-size:18px">'+message+'</span></div>');
+            };
+
+            $('#add-email').click(function () {
+                var email = $('.select2-selection__rendered')[0];
+                if (!email) {
+                    return
+                }
+                else {
+                    email = email.title;
+                }
+                $.ajax({
+                    type: 'POST',
+                    url: "{%  url 'preferences' %}",
+                    data: {'email_add': email,
+                        'csrfmiddlewaretoken': "{{ csrf_token }}"},
+                    success: function(data)
+                    {
+                        if ($('#empty')) {
+                            $('#empty').remove()
+                        }
+                        $('#email-table').append('<tr><td>' + data["email"] + '</td>' +
+                            '<td><button data-delete="' + data['email'] + '" class="btn btn-danger" value="remove">remove</button></td>');
+                    },
+                    error: function(data)
+                    {
+                        bootstrap_alert.warning(data['responseJSON']['message'], "email-messages");
+                    }
+                });
+            });
+
+
+            $('#verify-email').click(function () {
+                if ('{{ name }}' === 'Demo') {
+                    bootstrap_alert.warning("Demo users cannot verify new emails", "email-messages");
+                    return;
+                }
+                var email = $('[name=email]').val();
+                $.ajax({
+                    type: 'POST',
+                    url: "{%  url 'email-verify' %}",
+                    data: {'email': email,
+                        'csrfmiddlewaretoken': "{{ csrf_token }}"},
+                    success: function(data)
+                    {
+                        bootstrap_alert.success(data['message'], "email-messages");
+                    },
+                    error: function(data)
+                    {
+                        console.log(data);
+                        bootstrap_alert.warning(data['responseJSON']['message'], "email-messages");
+                    }
+                });
+            });
+        });
+
+        $('.email-delete').click(function () {
+            var email = $(this).data().delete;
+            $.ajax({
+                type: 'POST',
+                url: "{%  url 'email-delete' %}",
+                data: {
+                    'email': email,
+                    'csrfmiddlewaretoken': "{{ csrf_token }}"
+                },
+                success: function (data) {
+                    console.log($('#email-table tr').length);
+
+                    var query = 'button[data-delete=\'' + email + '\']';
+                    var row = $(`${query}`).closest('tr')[0];
+                    row.remove();
+                    if ($('#email-table tr').length == 0) {
+                        $('#email-table').append('<tr id="empty"><td>None</td></tr>');
+                    }
+                }
+            });
+        });
+
+        $('#alert-table').DataTable( {
+            responsive:     true,
+            columnDefs: [
+                { responsivePriority: 1, targets: 0 },
+                { responsivePriority: 3, targets: 1 },
+                { responsivePriority: 2, targets: 2 },
+                { responsivePriority: 1, targets: 3 },
+            ],
+            order: [[ 0, 'desc' ]],
+        } );
+
+        $('#sub-table').DataTable( {
+            responsive:     true,
+            columnDefs: [
+                { responsivePriority: 1, targets: 0 },
+                { responsivePriority: 3, targets: 1 },
+                { responsivePriority: 4, targets: 2 },
+                { responsivePriority: 4, targets: 3 },
+                { responsivePriority: 2, targets: 4 },
+                { responsivePriority: 1, targets: 5 },
+            ],
+            searching: false,
+            paging: false,
+            ordering: false,
+            "bInfo": false
+        } );
+
+        $('#trans-table').DataTable( {
+            responsive:     true,
+            columnDefs: [
+                { responsivePriority: 1, targets: 0 },
+                { responsivePriority: 2, targets: 1 },
+                { responsivePriority: 3, targets: 2 },
+            ],
+            searching: false,
+            order: [[ 0, 'desc' ]],
+
+        } );
+    </script>
+{% endblock %}

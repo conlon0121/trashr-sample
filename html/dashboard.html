@@ -1,0 +1,228 @@
+{% extends 'logged_in/base.html' %}
+{% load static %}
+{% load bootstrap3 %}
+{{ form.media }}
+{% load render_table from django_tables2 %}
+
+{% block content %}
+    <title>Dashboard</title>
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/dt-1.10.16/af-2.2.2/b-1.4.2/r-2.2.0/sc-1.4.3/sl-1.2.3/datatables.min.css"/>
+
+    <script type="text/javascript" src="https://cdn.datatables.net/v/dt/dt-1.10.16/af-2.2.2/b-1.4.2/r-2.2.0/sc-1.4.3/sl-1.2.3/datatables.min.js"></script>
+
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.41.0/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.41.0/mapbox-gl.css' rel='stylesheet' />
+
+
+    <div id="page-wrapper">
+        <div class="row">
+            <div class="col-lg-12">
+                <h1 class="page-header">Dashboard</h1>
+            </div>
+            <!-- /.col-lg-12 -->
+        </div>
+        <div id="messages">
+        </div>
+        <div class="row">
+            <form id="form-update" method="post" action="{% url 'alert_update' %}">
+                <div class="hide"> {{ form_update.as_p }} {% csrf_token %} </div>
+                <div id="table" class="col-md-6" style="visibility:hidden">
+                    {% include 'logged_in/table.html' %}
+                </div>
+            </form>
+
+            <div class="map col-md-6">
+                <div id='map' style='width: 100%; height: 100%;'>
+                    <div style="z-index: 10; position: absolute; padding-left: 5px">
+                        Double click on rows to display on map
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        var RATE_LIMIT_IN_MS = 1000;
+        var NUMBER_OF_REQUESTS_ALLOWED = 1;
+        var NUMBER_OF_REQUESTS = 0;
+
+        setInterval(function()
+        {
+            NUMBER_OF_REQUESTS = 0;
+
+        }, RATE_LIMIT_IN_MS);
+
+        $.ajaxSetup ({
+            beforeSend: function canSendAjaxRequest()
+            {
+                var can_send = NUMBER_OF_REQUESTS < NUMBER_OF_REQUESTS_ALLOWED;
+                NUMBER_OF_REQUESTS++;
+                return can_send;
+            }
+        });
+        $.fn.dataTable.ext.search.push(
+            function( settings, data, dataIndex ) {
+                $('#min').css('margin-bottom', '10px');
+                $('#max').css('margin-bottom', '10px');
+                var min = parseInt( $('#min').val(), 0 );
+                var max = parseInt( $('#max').val(), 0 );
+                var percent_fill = parseFloat( data[4] ) || 0;
+
+                if ( ( isNaN( min )          && isNaN( max ) ) ||
+                    ( isNaN( min )          && percent_fill <= max ) ||
+                    ( min <= percent_fill   && isNaN( max ) ) ||
+                    ( min <= percent_fill   && percent_fill <= max ) ) {
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        function updateInput(inputField, successful) {
+            inputField.removeClass('success-glow');
+            inputField.removeClass('fail-glow');
+
+            if (successful)
+                cssClass = 'success-glow';
+            else
+                cssClass = 'fail-glow';
+            inputField.addClass(cssClass)
+            setTimeout(function () {
+                inputField.removeClass(cssClass);
+            }, 1500);
+        }
+
+        $(document).ready(function() {
+            $('.fa-dashboard').addClass('active');
+            bootstrap_alert = function() {};
+            bootstrap_alert.warning = function(message) {
+                $('#messages').html('<div class="alert alert-danger alert-dismissable">\
+                       <button type="button" class="close" data-dismiss="alert" aria-hidden="true">\
+                       &times;</button><span style="font-size:18px">'+message+'</span></div>');
+            }
+            if ('{{ errors }}') {
+                bootstrap_alert.warning('{{errors}}');
+            }
+
+            mapboxgl.accessToken = 'pk.eyJ1IjoidHJhc2hyIiwiYSI6ImNqOHJ3MDBzZjAyZTgzNG1yNHpmZDl3Y2sifQ.q574EBc3GMSMHBH2sPGM6w';
+            var map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/trashr/cjbfu0nyla7fi2stdtkajkfia',
+                center: [{{long}}, {{lat}}],
+                zoom: 12.5
+            });
+            map.addControl(new mapboxgl.NavigationControl());
+
+            var geojson = {{layer|safe}};
+
+            map.on('load', function() {
+                map.addLayer(geojson);
+                map.on('click', 'dumpsters', function (e) {
+                    feature = e.features[0]
+                    new mapboxgl.Popup()
+                        .setLngLat(feature.geometry.coordinates)
+                        .setHTML(feature.properties.description)
+                        .addTo(map);
+                    row = table.row('#' + feature.properties.id);
+                    row.scrollTo();
+                    row.select();
+                });
+
+                // Change the cursor to a pointer when the mouse is over the places layer.
+                map.on('mouseenter', 'dumpsters', function () {
+                    map.getCanvas().style.cursor = 'pointer';
+                });
+
+                // Change it back to a pointer when it leaves.
+                map.on('mouseleave', 'dumpsters', function () {
+                    map.getCanvas().style.cursor = '';
+                });
+            });
+
+            var table = $('#dumpster-table').DataTable( {
+                responsive:     true,
+                select: {style: 'single'},
+                deferRender:    false,
+                scrollY:        '59vh',
+                scrollCollapse: true,
+                scroller:       true,
+                columnDefs: [
+                    { targets: 0, visible: false, searchable: false },
+                    { targets: 1, visible: false, searchable: false },
+                    { responsivePriority: 1, targets: 2 },
+                    { responsivePriority: 1, targets: 4 },
+                    { responsivePriority: 2, targets: 5 },
+                    { responsivePriority: 3, targets: 3 }
+                ],
+                order: [[ 4, 'desc' ]]
+            } );
+            $('#min, #max').keyup(function() {
+                table.draw();
+            });
+
+            $('#table').css('visibility', 'visible');
+
+            $(".update-input").change(function(e) {
+                percentage = e.currentTarget.value;
+                if (percentage > 100 || percentage < -1) {
+                    updateInput($(e.currentTarget), false);
+                    return
+                }
+                $('input[name="dumpster"]').val($(this).closest('tr')[0].id);
+                $('input[name="percentage"]').val(e.currentTarget.value);
+                $.ajax({
+                    type: "POST",
+                    url: {% url 'alert_update' %},
+                    data: $("#form-update").serialize(),
+                    success: function(data)
+                    {
+                        if (data['success'] === 1)
+                            updateInput($(e.currentTarget), true);
+                        else
+                            updateInput($(e.currentTarget), false);
+                    },
+                    error: function(data)
+                    {
+                        updateInput($(e.currentTarget), false);
+                    }
+                });
+            });
+
+            table
+                .on('dblclick', 'tr', function ( e ) {
+                    popup = $(".mapboxgl-popup-close-button");
+                    if (map.loaded() && popup) {
+                        for (i = 0; i < popup.length; i++) {
+                            popup[i].click();
+                        }
+                    }
+                    data = table.rows('#' + $(this).attr('id')).data().toArray()[0];
+                    coords = data[1];
+                    separator = coords.indexOf(' ');
+                    latitude = coords.substring(0, separator + 1);
+                    latitude = latitude.replace(/[^0-9.-]/g, "");
+                    longitude = coords.substring(separator);
+                    longitude = longitude.replace(/[^0-9.-]/g, "");
+                    longLat = [longitude, latitude];
+                    point = map.project(longLat);
+                    lngLat = new mapboxgl.LngLat(longitude, latitude);
+                    html = data[2] +
+                        '<br/>' +
+                        '<center>' +
+                        data[4] +
+                        'full</center>';
+                    new mapboxgl.Popup()
+                        .setLngLat(lngLat)
+                        .setHTML(data[2] +
+                            '<br/>' +
+                            '<center>' +
+                            data[4].substring(data[4].indexOf('>') + 1,
+                                data[4].indexOf('%')) +
+                            '% full</center>')
+                        .addTo(map);
+                    map.flyTo({center: longLat});
+                } )
+        } );
+    </script>
+{% endblock %}
+
